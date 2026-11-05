@@ -52,7 +52,8 @@ export class Engine {
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 512;
     this.bus.connect(this.tone); this.tone.connect(this.comp);
     this.bus.connect(this.verbSend); this.verbSend.connect(this.verb); this.verb.connect(this.comp);
-    this.comp.connect(this.master); this.master.connect(this.analyser); this.analyser.connect(ctx.destination);
+    this.limit = ctx.createDynamicsCompressor(); this.limit.threshold.value = -4; this.limit.knee.value = 2; this.limit.ratio.value = 20; this.limit.attack.value = .001; this.limit.release.value = .08;
+    this.comp.connect(this.limit); this.limit.connect(this.master); this.master.connect(this.analyser); this.analyser.connect(ctx.destination);
     this.noise = this._noiseBuffer();
     this.shaper = ctx.createWaveShaper(); this.shaper.curve = this._driveCurve(60); this.shaper.oversample = '2x';
     this.shaperOut = ctx.createGain(); this.shaperOut.gain.value = .5;
@@ -62,6 +63,24 @@ export class Engine {
     const cr = ctx.createBufferSource(); cr.buffer = this._crackleBuffer(); cr.loop = true;
     const crf = ctx.createBiquadFilter(); crf.type = 'bandpass'; crf.frequency.value = 2500; crf.Q.value = .7;
     cr.connect(crf); crf.connect(this.crackleGain); this.crackleGain.connect(this.master); cr.start();
+    // metal: two double-tracked guitar amps (pre-filter -> high gain -> scooped EQ -> cab sim), hard-ish panned
+    this.amps = [-0.75, 0.75].map(panV => {
+      const inp = ctx.createGain();
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90;
+      const pre = ctx.createGain(); pre.gain.value = 8;
+      const sh = ctx.createWaveShaper(); sh.curve = this._driveCurve(320); sh.oversample = '4x';
+      const tight = ctx.createBiquadFilter(); tight.type = 'highpass'; tight.frequency.value = 70;
+      const low = ctx.createBiquadFilter(); low.type = 'lowshelf'; low.frequency.value = 140; low.gain.value = 5;
+      const scoop = ctx.createBiquadFilter(); scoop.type = 'peaking'; scoop.frequency.value = 520; scoop.Q.value = .8; scoop.gain.value = -8;
+      const pres = ctx.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 2300; pres.Q.value = 1.1; pres.gain.value = 4;
+      const cab = ctx.createBiquadFilter(); cab.type = 'lowpass'; cab.frequency.value = 4600; cab.Q.value = .8;
+      const cab2 = ctx.createBiquadFilter(); cab2.type = 'lowpass'; cab2.frequency.value = 7000; cab2.Q.value = .5;
+      const out = ctx.createGain(); out.gain.value = .095;
+      const pan = ctx.createStereoPanner(); pan.pan.value = panV;
+      inp.connect(hp); hp.connect(pre); pre.connect(sh); sh.connect(tight); tight.connect(low); low.connect(scoop);
+      scoop.connect(pres); pres.connect(cab); cab.connect(cab2); cab2.connect(out); out.connect(pan); pan.connect(this.bus);
+      return inp;
+    });
     this.step = 0; this.bar = 0; this.nextTime = 0; this.params = { bpm: 100, bright: .5, verb: .4 };
   }
 
@@ -157,6 +176,7 @@ export class Engine {
   _playStep(i, t) {
     const g = this.genre, spb = 60 / this.params.bpm, sixteenth = spb / 4;
     const vel = g.soft ? .6 : 1;
+    if (g.id === 'metal') return this._metalStep(i, t, sixteenth);
     if (on(g.k, i)) this._kick(t, vel, g.id === 'trap' || g.bass === 'sub808');
     if (on(g.s, i)) g.id === 'house' || g.id === 'disco' ? this._clap(t, vel) : this._snare(t, vel);
     if (on(g.h, i)) this._hat(t, g.id === 'house' && i % 4 === 2 ? .2 : .045, vel * (i % 4 === 0 ? .9 : .6));
@@ -196,6 +216,69 @@ export class Engine {
     }
   }
 
+  // ---------- metal ----------
+  // Riff tokens per 16th: m = palm-muted chug on low E, digits = open power chord N semitones up, . = let ring/rest.
+  _metalStep(i, t, six) {
+    const bar = (this.bar - 1 + 4) % 4, E = 40;                                   // E2
+    const RIFFS = ['m.mmm.mmm.mm1...', 'm.mmm.mmm.mm3.1.', 'mmmmm.m.mm.m5...', 'm.mm.mm.m.mm1.0.'];
+    const riff = RIFFS[bar], c = riff[i];
+    if (c === 'm') { this._chug(t, E, true, six * .85); this._bass(t, E, six * .8, 'saw'); }
+    else if (c !== '.') {
+      let len = 1; while (i + len < 16 && riff[i + len] === '.') len++;
+      const n = E + (+c);
+      this._chug(t, n, false, six * len * .95); this._bass(t, n, six * len * .9, 'saw');
+    }
+    // drums: kick locks to the chugs, double bass on bar 3, fill on bar 4
+    const kick = bar === 2 ? true : bar === 3 && i >= 12 ? false : c === 'm' || (c !== '.' && i % 2 === 0);
+    if (kick) this._kickTight(t);
+    const fill = bar === 3 && i >= 12;
+    if (i === 4 || i === 12 || fill) this._snareBig(t, fill ? .6 + (i - 12) * .12 : 1);
+    if (i === 0 && (bar === 0 || bar === 2)) this._crash(t);
+    else if (i % 2 === 0 && !fill) this._ride(t, i % 4 === 0 ? 1 : .7);
+  }
+  _chug(t, root, muted, dur) {
+    const ctx = this.ctx;
+    this.amps.forEach((inp, k) => {
+      const tt = t + k * .006 + Math.random() * .004;                             // double-tracked, slightly loose
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = muted ? 1.2 : .7;
+      f.frequency.setValueAtTime(muted ? 900 : 3600, tt); if (muted) f.frequency.exponentialRampToValueAtTime(380, tt + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, tt); g.gain.linearRampToValueAtTime(.55, tt + .003);
+      if (muted) g.gain.exponentialRampToValueAtTime(.0005, tt + dur);
+      else { g.gain.setValueAtTime(.5, tt + dur * .8); g.gain.exponentialRampToValueAtTime(.0005, tt + dur + .12); }
+      const notes = muted ? [root, root + 7] : [root, root + 7, root + 12];
+      for (const n of notes) for (const det of [-4, 5]) {
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(n); o.detune.value = det + (k ? 3 : -3);
+        o.connect(f); o.start(tt); o.stop(tt + dur + .2);
+      }
+      f.connect(g); g.connect(inp);
+    });
+  }
+  _kickTight(t) {
+    const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(48, t + .07);
+    g.gain.setValueAtTime(.85, t); g.gain.exponentialRampToValueAtTime(.001, t + .2);
+    o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + .25);
+    this._noise(t, .012, 'highpass', 3500, .7, .5);                               // beater click
+  }
+  _snareBig(t, vel) {
+    this._noise(t, .3, 'bandpass', 2100, .6, .9 * vel);
+    this._noise(t, .14, 'highpass', 5500, .7, .35 * vel);
+    const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(150, t + .1);
+    g.gain.setValueAtTime(.6 * vel, t); g.gain.exponentialRampToValueAtTime(.001, t + .14);
+    o.connect(g); g.connect(this.bus); o.start(t); o.stop(t + .2);
+  }
+  _metallic(t, dur, peak, centre) {
+    const ctx = this.ctx, bp = ctx.createBiquadFilter(), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+    bp.type = 'bandpass'; bp.frequency.value = centre; bp.Q.value = .6; hp.type = 'highpass'; hp.frequency.value = 5000;
+    g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(.0005, t + dur);
+    for (const f of [205.3, 304.4, 369.6, 522.7, 540, 800]) { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f * 2.1; o.connect(bp); o.start(t); o.stop(t + dur + .05); }
+    bp.connect(hp); hp.connect(g); g.connect(this.bus);
+  }
+  _crash(t) { this._noise(t, 1.8, 'highpass', 4200, .5, .24); this._metallic(t, 1.5, .12, 8000); }
+  _ride(t, vel) { this._metallic(t, .32, .05 * vel, 7200); }
+
   // ---------- voices ----------
   _env(node, t, a, peak, dur, rel = .08) {
     const g = node.gain; g.setValueAtTime(0, t); g.linearRampToValueAtTime(peak, t + a);
@@ -209,7 +292,7 @@ export class Engine {
   }
   _noise(t, dur, type, freq, q, peak, dest = this.bus) {
     const ctx = this.ctx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    s.buffer = this.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
+    s.buffer = this.noise; s.loop = true; f.type = type; f.frequency.value = freq; f.Q.value = q;
     g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
     s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * .5); s.stop(t + dur + .05);
   }
