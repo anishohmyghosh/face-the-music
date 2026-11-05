@@ -4,7 +4,7 @@ Make a face, hear a genre. A live facial-expression classifier moves a point acr
 
 **Live:** https://anishohmyghosh.github.io/face-the-music/
 
-This is a rebuild of my 2025 *Design with AI* class project (University of Miami), where I trained a facial-expression classifier in Apple CreateML and tested how training-set size affects accuracy ([original process document](https://anishohmyghosh.github.io/website/files/createml-emotion-classifier-process.pdf)).
+This is a rebuild of my 2025 *Design with AI* class project (University of Miami), where I trained a facial-expression classifier in Apple CreateML and tested how training-set size affects accuracy (the full write-up is on the site under "The project").
 
 ## How it works
 1. **Find the face:** MediaPipe Face Landmarker (in the browser) measures 52 facial blendshapes per frame.
