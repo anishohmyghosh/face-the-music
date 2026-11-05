@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face the Music</title>
+<meta name="description" content="Make a face, hear a genre. A live facial-expression classifier steers generative music across a valence–arousal map.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Manrope:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g'%3E%3Cstop offset='0' stop-color='%23f0c879'/%3E%3Cstop offset='1' stop-color='%23b4483f'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='14' fill='url(%23g)'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Face the Music</h1>
+    <p class="sub">Make a face, hear a genre. Your expression moves a point across an emotion map, and the music follows.</p>
+  </div>
+  <a class="toplink" href="#process">How it works ↓</a>
+</header>
+
+<main class="app">
+  <section class="plane-wrap" aria-label="Valence and arousal map">
+    <div class="plane" id="plane">
+      <canvas id="planeCanvas"></canvas>
+      <span class="ax ax-top">Energetic</span>
+      <span class="ax ax-bottom">Calm</span>
+      <span class="ax ax-left">Negative</span>
+      <span class="ax ax-right">Positive</span>
+    </div>
+    <p class="hint" id="hint">Drag the glowing point, or turn on your camera and let your face steer.</p>
+  </section>
+
+  <aside class="side">
+    <div class="now">
+      <p class="eyebrow">Now playing</p>
+      <h2 id="genreName">Indie</h2>
+      <p class="meta"><span id="moodWord">Neutral</span> · <span id="bpm">104</span> bpm</p>
+    </div>
+
+    <div class="transport">
+      <button class="play" id="playBtn" aria-label="Play">
+        <svg id="iconPlay" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+        <svg id="iconPause" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+      </button>
+      <label class="vol">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+        <span class="sr">Volume</span>
+        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.7">
+      </label>
+    </div>
+
+    <div class="cam">
+      <div class="cam-view" id="camView">
+        <video id="video" playsinline muted></video>
+        <div class="cam-empty" id="camEmpty">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="11" r="6.5" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="9.7" cy="10" r=".9" fill="currentColor"/><circle cx="14.3" cy="10" r=".9" fill="currentColor"/><path d="M9.3 13.2c1.5 1.4 3.9 1.4 5.4 0" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+          <span>Camera is off</span>
+        </div>
+        <span class="cam-status" id="camStatus" hidden></span>
+      </div>
+      <div class="cam-btns">
+        <button class="btn" id="camBtn">Turn on camera</button>
+        <button class="btn ghost" id="calBtn" disabled title="Hold a relaxed face for 2 seconds so the model learns your resting expression">Calibrate</button>
+        <button class="btn ghost" id="holdBtn" aria-pressed="false" title="Freeze the point where it is">Hold</button>
+      </div>
+      <ul class="bars" id="bars" aria-label="Expression probabilities"></ul>
+      <p class="privacy">Everything runs in your browser. Video never leaves your device.</p>
+    </div>
+  </aside>
+</main>
+
+<section class="process" id="process">
+  <div class="prose">
+    <p class="eyebrow">Process</p>
+    <h2>From a CreateML class project to a live instrument</h2>
+    <p>This started as a project for my Design with AI class at the University of Miami (Dr. Ching-Hua Chuan): train a facial-expression classifier in Apple's CreateML and test how training-set size affects performance. I sorted the public <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">muxspace facial_expressions</a> dataset into five emotions (anger, fear, happiness, neutral, sadness), held out a fixed test set of 20 images per emotion, and trained five models on 10, 20, 30, 40 and 50 images per emotion.</p>
+    <p>The models overfit badly: near-100% training accuracy, but only 24–36% on the test set, with sadness often never recognized at all. In the write-up I suggested a fix: <em>find the face first, crop away everything else, then classify the facial features.</em> This version does exactly that.</p>
+
+    <h3>What changed</h3>
+    <ol class="steps">
+      <li><strong>Find the face.</strong> Google's MediaPipe Face Landmarker locates the face and measures 52 facial muscle movements ("blendshapes") such as <code>mouthSmileLeft</code> or <code>browInnerUp</code>. Background, lighting and hair stop mattering.</li>
+      <li><strong>Classify the movements.</strong> I dropped the 8 eye-gaze measurements (they say where you're looking, not how you feel) and trained a small logistic-regression model on the remaining 43, using the same dataset and the same five emotions.</li>
+      <li><strong>Map to valence &amp; arousal.</strong> Each emotion sits on Russell's circumplex (the valence–arousal grid used by Ferreira et al.). The point on the map is the probability-weighted average of those positions, smoothed over time.</li>
+      <li><strong>Make the music.</strong> Instead of calling a cloud music model, a generative Web Audio engine plays 15 genre "recipes". The nearest genre picks the drum pattern, scale and instruments; tempo, brightness and reverb glide between neighbours.</li>
+    </ol>
+
+    <h3>Same experiment, new pipeline</h3>
+    <p>I re-ran the original protocol: a fixed 20-per-emotion test set and training sets of 10–50 per emotion. The new numbers are averaged over 20 random splits so one lucky split can't skew them.</p>
+  </div>
+
+  <figure class="chart-card">
+    <div class="legend"><span class="lg old">CreateML (2025)</span><span class="lg new">Face landmarks + logistic regression</span><span class="lg chance">Chance (20%)</span></div>
+    <svg id="sizeChart" viewBox="0 0 640 312" role="img" aria-label="Test accuracy by training set size"></svg>
+    <figcaption>Test accuracy by images per emotion. Accuracy now rises steadily as data grows, which it didn't in the original.</figcaption>
+  </figure>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="prose">
+    <h3>Where it still struggles</h3>
+    <p>The full model (trained on every usable image, scored on a held-out 20%) is shown below as a confusion matrix: rows are the true labels, columns are what the model guessed. Happiness is easy. <strong>Fear is the weak spot</strong>: the dataset only has about 70 fear images, many of them hard to tell apart from surprise or neutral. Some labels also didn't match my own reading of the face, an issue I flagged in the original write-up. The <em>Calibrate</em> button helps by learning what your resting face looks like, and you can always drag the point by hand.</p>
+  </div>
+  <figure class="cm-card">
+    <div class="cm" id="cm"></div>
+    <figcaption>Confusion matrix on the held-out test set (counts).</figcaption>
+  </figure>
+
+  <div class="prose small">
+    <h3>Credits &amp; sources</h3>
+    <ul class="refs">
+      <li>Original process document: <a href="https://anishohmyghosh.github.io/website/files/createml-emotion-classifier-process.pdf" target="_blank" rel="noopener">Emotion Classifier with CreateML (PDF)</a></li>
+      <li>Dataset: muxspace, <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">facial_expressions</a></li>
+      <li>Face tracking: <a href="https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker" target="_blank" rel="noopener">MediaPipe Face Landmarker</a></li>
+      <li>Ferreira, Mou, Whitehead &amp; Lelis (2022). Controlling perceived emotion in symbolic music generation with Monte Carlo tree search. <a href="https://doi.org/10.1609/aiide.v18i1.21960" target="_blank" rel="noopener">AIIDE 18(1)</a></li>
+      <li>Training scripts are in the <a href="training/">training/</a> folder of this repo.</li>
+    </ul>
+    <p class="by">Made by <a href="https://anishohmyghosh.github.io/website/" target="_blank" rel="noopener">Anish Ghosh</a>.</p>
+  </div>
+</section>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.DS_Store
+.venv/
+data/
+features.json
+*.task
+picts500.csv
