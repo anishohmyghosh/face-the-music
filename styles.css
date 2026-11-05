@@ -80,7 +80,44 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .privacy { font-size: .75rem; color: var(--muted); }
 
 /* ---------- process ---------- */
-.process { max-width: 860px; margin: 0 auto; padding: 56px 24px 80px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 28px; }
+.process { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 12px; }
+.writeup { background: var(--card); border: 1px solid var(--line); border-radius: 22px; }
+.writeup > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 22px 24px; border-radius: 22px; }
+.writeup > summary::-webkit-details-marker { display: none; }
+.writeup > summary:hover { background: rgba(255,255,255,.02); }
+.writeup > summary > span { display: flex; flex-direction: column; gap: 4px; }
+.sum-title { font-family: var(--f-display); font-size: clamp(1.5rem, 3.4vw, 2rem); line-height: 1.15; }
+.sum-sub { color: var(--muted); font-size: .88rem; }
+.chev { width: 26px; height: 26px; flex: none; color: var(--gold); transition: transform .3s; }
+.writeup[open] .chev { transform: rotate(180deg); }
+.writeup[open] > summary { border-bottom: 1px solid var(--line); border-radius: 22px 22px 0 0; }
+.writeup-body { padding: 28px 24px 32px; display: flex; flex-direction: column; gap: 26px; }
+.writeup-body [id^="p-"] { scroll-margin-top: 16px; }
+.writeup-body .chart-card, .writeup-body .cm-card, .writeup-body .stat { background: var(--bg2); }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; }
+.toc a { font-size: .78rem; color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 4px 12px; border-radius: 999px; }
+.toc a:hover { color: var(--ink); border-color: var(--muted); }
+details.code { border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+details.code > summary { cursor: pointer; padding: 9px 14px; font-size: .82rem; color: var(--gold); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+details.code pre { margin: 0; padding: 4px 16px 16px; overflow-x: auto; font-size: .78rem; line-height: 1.55; }
+details.code pre code { background: none; padding: 0; color: #d6cec6; }
+.formulas { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--f-display); font-size: 1.15rem; color: var(--ink); font-style: italic; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+.results { width: 100%; border-collapse: collapse; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.results th, .results td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.results th { color: var(--muted); font-weight: 500; font-size: .74rem; }
+.results th:first-child, .results td:first-child { text-align: left; }
+.results tr:last-child td { border-bottom: 0; }
+.results b { color: var(--gold); font-weight: 700; }
+.curves { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.curves figure, .img-card { margin: 0; }
+.curves img, .img-card img { width: 100%; height: auto; display: block; border-radius: 10px; }
+.curves img, .img-card.light img { background: #fff; padding: 6px; }
+.curves figcaption { margin-top: 6px; }
+.img-card { padding: 14px; background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.notes { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; color: #d6cec6; }
+.notes b { color: var(--ink); }
 .prose { display: flex; flex-direction: column; gap: 14px; }
 .prose h2 { font-size: clamp(1.9rem, 4vw, 2.6rem); }
 .prose h3 { font-size: 1.6rem; margin-top: 10px; }
@@ -118,5 +155,7 @@ figcaption { color: var(--muted); font-size: .82rem; margin-top: 10px; }
   .process { padding: 40px 16px 64px; }
   .plane { padding: 22px; }
   .cm { grid-template-columns: 64px repeat(5, 1fr); font-size: .7rem; }
+  .pair { grid-template-columns: 1fr; }
+  .writeup > summary, .writeup-body { padding-left: 16px; padding-right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }

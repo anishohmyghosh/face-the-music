@@ -145,6 +145,16 @@ async function togglePlay() {
   playBtn.setAttribute('aria-label', engine.playing ? 'Pause' : 'Play');
 }
 playBtn.addEventListener('click', togglePlay);
+// Pause when the tab is hidden; pick back up when the listener returns.
+let resumeOnReturn = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && engine.playing) { resumeOnReturn = true; togglePlay(); }
+  else if (!document.hidden && resumeOnReturn) { resumeOnReturn = false; togglePlay(); }
+});
+// "How it works" opens the write-up dropdown.
+const writeup = $('writeup');
+document.querySelectorAll('a[href="#process"]').forEach(a => a.addEventListener('click', () => { writeup.open = true; }));
+if (location.hash === '#process') writeup.open = true;
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' && !['INPUT', 'BUTTON', 'TEXTAREA'].includes(document.activeElement.tagName)) { e.preventDefault(); togglePlay(); }
 });

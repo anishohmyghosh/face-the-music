@@ -17,7 +17,7 @@
     <h1>Face the Music</h1>
     <p class="sub">Make a face, hear a genre. Your expression moves a point across an emotion map, and the music follows.</p>
   </div>
-  <a class="toplink" href="#process">How it works ↓</a>
+  <a class="toplink" href="#process">The project ↓</a>
 </header>
 
 <main class="app">
@@ -72,20 +72,156 @@
 </main>
 
 <section class="process" id="process">
-  <div class="prose">
-    <p class="eyebrow">Process</p>
-    <h2>From a CreateML class project to a live instrument</h2>
-    <p>This started as a project for my Design with AI class at the University of Miami (Dr. Ching-Hua Chuan): train a facial-expression classifier in Apple's CreateML and test how training-set size affects performance. I sorted the public <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">muxspace facial_expressions</a> dataset into five emotions (anger, fear, happiness, neutral, sadness), held out a fixed test set of 20 images per emotion, and trained five models on 10, 20, 30, 40 and 50 images per emotion.</p>
-    <p>The models overfit badly: near-100% training accuracy, but only 24–36% on the test set, with sadness often never recognized at all. In the write-up I suggested a fix: <em>find the face first, crop away everything else, then classify the facial features.</em> This version does exactly that.</p>
+<details class="writeup" id="writeup">
+  <summary>
+    <span>
+      <span class="eyebrow">The project</span>
+      <span class="sum-title">Full write-up: from a CreateML class study to a live instrument</span>
+      <span class="sum-sub">Data prep, the original CreateML experiments, what went wrong, and how this rebuild fixes it.</span>
+    </span>
+    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </summary>
 
-    <h3>What changed</h3>
+  <div class="writeup-body">
+  <nav class="toc" aria-label="Sections">
+    <a href="#p-intro">Introduction</a><a href="#p-data">Data</a><a href="#p-createml">CreateML models</a><a href="#p-results">Results</a><a href="#p-app">The music idea</a><a href="#p-rebuild">The rebuild</a><a href="#p-refs">Sources</a>
+  </nav>
+
+  <div class="prose" id="p-intro">
+    <p class="eyebrow">Part 1 · The original study (Sept 2025)</p>
+    <h2>Facial expression recognition with CreateML</h2>
+    <p>A project for my Design with AI class at the University of Miami with Dr. Ching-Hua Chuan. The question: how does training-set size affect a facial-expression classifier built in Apple's CreateML? I built five datasets of increasing size, trained a model on each, and compared them on one fixed test set. Then I sketched a creative use for the model: steering generated music with your face.</p>
+  </div>
+
+  <div class="prose" id="p-data">
+    <h3>Preparing the data</h3>
+    <p>I used the public <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">facial_expressions</a> repository (uploaded by Brian Lee Yung Rowe). CreateML wants one folder per label, so a small script read the label CSV and copied each image into a folder named after its emotion.</p>
+    <details class="code"><summary>sort_by_emotion.py</summary>
+<pre><code>import os, shutil
+import pandas as pd
+
+csv_path = "facial_expressions-master/data/500_picts_satz.csv"
+images_folder = "facial_expressions-master/images"
+output_base = "Expressions"
+
+df = pd.read_csv(csv_path)
+for _, row in df.iterrows():
+    filename, emotion = row["image"], row["emotion"]
+    src = os.path.join(images_folder, filename)
+    dest_folder = os.path.join(output_base, emotion)
+    os.makedirs(dest_folder, exist_ok=True)
+    if os.path.exists(src):
+        shutil.copy(src, os.path.join(dest_folder, filename))
+    else:
+        print(f"File not found: {src}")</code></pre>
+    </details>
+    <p>That produced five emotions: anger, fear, happiness, neutral and sadness. The largest training set needed 50 images per emotion plus 20 for testing, so every class needed at least 70. Fear and sadness came up short, so I pulled more labeled images from the repo's <code>legend.csv</code> and from student-submitted test images labeled in their filenames. Fear ended at 74 images and sadness at 181.</p>
+    <p>A second script then built six datasets: one test set of 20 images per emotion, and five training sets of 10, 20, 30, 40 and 50 per emotion, with no overlap between test and training images.</p>
+    <details class="code"><summary>make_datasets.py</summary>
+<pre><code>import os, random, shutil
+from PIL import Image
+
+base_dir, output_dir = "Expressions", "Datasets"
+random.seed(42)  # reproducibility
+emotions = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+
+def copy_as_jpg(src, dst):
+    if os.path.splitext(src)[1].lower() == ".png":
+        Image.open(src).convert("RGB").save(os.path.splitext(dst)[0] + ".jpg", "JPEG")
+    else:
+        shutil.copy(src, dst)
+
+# 1. fixed test set: 20 per emotion
+remaining = {}
+for emotion in emotions:
+    src_dir = os.path.join(base_dir, emotion)
+    dst_dir = os.path.join(output_dir, "TestSet", emotion)
+    os.makedirs(dst_dir, exist_ok=True)
+    files = [f for f in os.listdir(src_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+    for f in random.sample(files, 20):
+        copy_as_jpg(os.path.join(src_dir, f), os.path.join(dst_dir, f))
+        files.remove(f)
+    remaining[emotion] = files
+
+# 2. training sets from what's left
+for size in [10, 20, 30, 40, 50]:
+    for emotion in emotions:
+        dst_dir = os.path.join(output_dir, f"TrainSet_{size}", emotion)
+        os.makedirs(dst_dir, exist_ok=True)
+        for f in random.sample(remaining[emotion], size):
+            copy_as_jpg(os.path.join(base_dir, emotion, f), os.path.join(dst_dir, f))</code></pre>
+    </details>
+    <p>Keeping the test set identical across all five builds is what makes them comparable. While sorting, I also noticed that some labels didn't match my own reading of the face, which comes back later.</p>
+  </div>
+
+  <div class="prose" id="p-createml">
+    <h3>Training five CreateML models</h3>
+    <p>Each model is scored on accuracy, plus macro-averaged precision and recall across the <i>C</i> = 5 classes:</p>
+    <div class="formulas">
+      <span>Accuracy = Σ TP<sub>i</sub> / N</span>
+      <span>Precision<sub>i</sub> = TP<sub>i</sub> / (TP<sub>i</sub> + FP<sub>i</sub>)</span>
+      <span>Recall<sub>i</sub> = TP<sub>i</sub> / (TP<sub>i</sub> + FN<sub>i</sub>)</span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="results">
+      <thead><tr><th>Images / emotion</th><th>Iterations</th><th>Train acc.</th><th>Validation acc.</th><th>Test acc.</th><th>Test precision</th><th>Test recall</th></tr></thead>
+      <tbody>
+        <tr><td>10</td><td>18</td><td>100.0</td><td>60.0</td><td><b>24</b></td><td>23.0</td><td>24.0</td></tr>
+        <tr><td>20</td><td>22</td><td>100.0</td><td>20.0</td><td><b>29</b></td><td>33.4</td><td>29.0</td></tr>
+        <tr><td>30</td><td>16</td><td>96.3</td><td>33.3</td><td><b>34</b></td><td>35.2</td><td>34.0</td></tr>
+        <tr><td>40</td><td>11</td><td>74.2</td><td>30.0</td><td><b>27</b></td><td>25.4</td><td>27.0</td></tr>
+        <tr><td>50</td><td>19</td><td>83.2</td><td>16.7</td><td><b>36</b></td><td>36.4</td><td>36.0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="curves">
+    <figure><img src="img/curve-10.png" alt="CreateML training curve, 10 images per emotion: training reaches 100%, validation 60%" loading="lazy"><figcaption>10 per emotion</figcaption></figure>
+    <figure><img src="img/curve-20.png" alt="CreateML training curve, 20 images per emotion" loading="lazy"><figcaption>20 per emotion</figcaption></figure>
+    <figure><img src="img/curve-30.png" alt="CreateML training curve, 30 images per emotion" loading="lazy"><figcaption>30 per emotion</figcaption></figure>
+    <figure><img src="img/curve-40.png" alt="CreateML training curve, 40 images per emotion" loading="lazy"><figcaption>40 per emotion</figcaption></figure>
+    <figure><img src="img/curve-50.png" alt="CreateML training curve, 50 images per emotion" loading="lazy"><figcaption>50 per emotion</figcaption></figure>
+  </div>
+  <div class="prose">
+    <ul class="notes">
+      <li><b>10 per emotion:</b> already better than chance (20%), but it never got a single sadness image right and over-predicted anger.</li>
+      <li><b>20 per emotion:</b> looked worse in training but did better on the test set, with 5–7 correct in every class.</li>
+      <li><b>30 per emotion:</b> continued the trend: worse in training, better in testing.</li>
+      <li><b>40 per emotion:</b> broke the trend, with some of the lowest numbers so far.</li>
+      <li><b>50 per emotion:</b> the weakest training scores but the best test score.</li>
+    </ul>
+  </div>
+  <figure class="img-card light">
+    <img src="img/createml-performance.png" alt="Line chart: training accuracy falls from 100% to about 83%, validation swings between 17% and 60%, test accuracy creeps from 24% to 36% as dataset size grows" loading="lazy">
+    <figcaption>CreateML: training, validation and test accuracy by dataset size (2025).</figcaption>
+  </figure>
+
+  <div class="prose" id="p-results">
+    <h3>Results</h3>
+    <p>Facial expression recognition turned out to be hard even with small, controlled datasets. Every model scored very high in training and far lower on validation and test data, a clear sign of overfitting. More images didn't steadily help: 40 per emotion did worse than 30. The best generalization came from 50 per emotion, which suggests more varied data helps, but the gains were uneven and depended on exactly which images landed in each set.</p>
+    <p>Some expressions were consistently harder. Sadness was the worst, with some models never recognizing it at all, while anger collected lots of false positives. Negative expressions with subtle or overlapping cues were harder to separate than distinct ones like happiness.</p>
+    <p>Mislabeled images and image quality probably hurt too. Bigger datasets such as Affectiva-MIT (AM-FED) or AffectNet might do better, but both are shared only on request. My suggested fix at the time: <em>use a chain of models. Find the face first, crop away everything around it, then classify the facial features.</em></p>
+  </div>
+
+  <div class="prose" id="p-app">
+    <h3>The music idea</h3>
+    <p>Emotions can be placed on a grid of <b>valence</b> (negative to positive) and <b>arousal</b> (calm to energetic), the same circumplex Ferreira et al. use to steer symbolic music generation. If a classifier can place your face on that grid, you can play music with your expression. Because the model isn't very accurate, it works best as a toy for exploring the idea, and a draggable point means a wrong guess never leaves you stuck.</p>
+  </div>
+  <div class="pair">
+    <figure class="img-card light"><img src="img/circumplex.jpg" alt="Valence-arousal circumplex: four quadrants with emotions like tense, excited, sad and relaxed" loading="lazy"><figcaption>The valence–arousal circumplex, as used by Ferreira et al. (2022).</figcaption></figure>
+    <figure class="img-card"><img src="img/prototype-2025.jpg" alt="The 2025 prototype: a dark grid with colored genre dots and a play button" loading="lazy"><figcaption>The 2025 prototype, built in Google AI Studio with MusicFX DJ. It needed a Google account and API, so it couldn't live on a static site.</figcaption></figure>
+  </div>
+
+  <div class="prose" id="p-rebuild">
+    <p class="eyebrow">Part 2 · The rebuild (Nov 2026)</p>
+    <h2>Taking my own advice</h2>
+    <p>This site does what the write-up suggested: find the face first, crop away everything else, then classify the facial features. And it runs entirely in the browser, so it can live on GitHub Pages.</p>
     <ol class="steps">
       <li><strong>Find the face.</strong> Google's MediaPipe Face Landmarker locates the face and measures 52 facial muscle movements ("blendshapes") such as <code>mouthSmileLeft</code> or <code>browInnerUp</code>. Background, lighting and hair stop mattering.</li>
       <li><strong>Classify the movements.</strong> I dropped the 8 eye-gaze measurements (they say where you're looking, not how you feel) and trained a small logistic-regression model on the remaining 43, using the same dataset and the same five emotions.</li>
-      <li><strong>Map to valence &amp; arousal.</strong> Each emotion sits on Russell's circumplex (the valence–arousal grid used by Ferreira et al.). The point on the map is the probability-weighted average of those positions, smoothed over time.</li>
+      <li><strong>Map to valence &amp; arousal.</strong> Each emotion sits at a spot on the circumplex. The point on the map is the probability-weighted average of those spots, smoothed over time.</li>
       <li><strong>Make the music.</strong> Instead of calling a cloud music model, a generative Web Audio engine plays 15 genre "recipes". The nearest genre picks the drum pattern, scale and instruments; tempo, brightness and reverb glide between neighbours.</li>
     </ol>
-
     <h3>Same experiment, new pipeline</h3>
     <p>I re-ran the original protocol: a fixed 20-per-emotion test set and training sets of 10–50 per emotion. The new numbers are averaged over 20 random splits so one lucky split can't skew them.</p>
   </div>
@@ -100,24 +236,28 @@
 
   <div class="prose">
     <h3>Where it still struggles</h3>
-    <p>The full model (trained on every usable image, scored on a held-out 20%) is shown below as a confusion matrix: rows are the true labels, columns are what the model guessed. Happiness is easy. <strong>Fear is the weak spot</strong>: the dataset only has about 70 fear images, many of them hard to tell apart from surprise or neutral. Some labels also didn't match my own reading of the face, an issue I flagged in the original write-up. The <em>Calibrate</em> button helps by learning what your resting face looks like, and you can always drag the point by hand.</p>
+    <p>The full model (trained on every usable image, scored on a held-out 20%) is shown below as a confusion matrix: rows are the true labels, columns are what the model guessed. Happiness is easy. <strong>Fear is the weak spot</strong>: the dataset only has about 70 fear images, many of them hard to tell apart from surprise or neutral. Mislabeled images are still in there too. The <em>Calibrate</em> button helps by learning what your resting face looks like, and you can always drag the point by hand.</p>
   </div>
   <figure class="cm-card">
     <div class="cm" id="cm"></div>
     <figcaption>Confusion matrix on the held-out test set (counts).</figcaption>
   </figure>
 
-  <div class="prose small">
-    <h3>Credits &amp; sources</h3>
+  <div class="prose small" id="p-refs">
+    <h3>Sources</h3>
     <ul class="refs">
-      <li>Original process document: <a href="https://anishohmyghosh.github.io/website/files/createml-emotion-classifier-process.pdf" target="_blank" rel="noopener">Emotion Classifier with CreateML (PDF)</a></li>
-      <li>Dataset: muxspace, <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">facial_expressions</a></li>
-      <li>Face tracking: <a href="https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker" target="_blank" rel="noopener">MediaPipe Face Landmarker</a></li>
-      <li>Ferreira, Mou, Whitehead &amp; Lelis (2022). Controlling perceived emotion in symbolic music generation with Monte Carlo tree search. <a href="https://doi.org/10.1609/aiide.v18i1.21960" target="_blank" rel="noopener">AIIDE 18(1)</a></li>
-      <li>Training scripts are in the <a href="training/">training/</a> folder of this repo.</li>
+      <li>Apple. Create ML. <a href="https://developer.apple.com/machine-learning/create-ml/" target="_blank" rel="noopener">Apple Developer</a></li>
+      <li>Ferreira, L. N., Mou, L., Whitehead, J., &amp; Lelis, L. H. S. (2022). Controlling perceived emotion in symbolic music generation with Monte Carlo tree search. <i>Proceedings of AIIDE</i>, 18(1), 163–170. <a href="https://doi.org/10.1609/aiide.v18i1.21960" target="_blank" rel="noopener">doi:10.1609/aiide.v18i1.21960</a></li>
+      <li>Google. MediaPipe <a href="https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker" target="_blank" rel="noopener">Face Landmarker</a>; <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a> (2025 prototype)</li>
+      <li>McDuff, D. J. (2013). <a href="https://dspace.mit.edu/handle/1721.1/80733" target="_blank" rel="noopener">Affectiva-MIT facial expression dataset (AM-FED)</a>. MIT.</li>
+      <li>Mollahosseini, A., Hasani, B., &amp; Mahoor, M. H. (2017). AffectNet. <i>IEEE Transactions on Affective Computing</i>. <a href="https://doi.org/10.1109/TAFFC.2017.2740923" target="_blank" rel="noopener">doi:10.1109/TAFFC.2017.2740923</a></li>
+      <li>muxspace. <a href="https://github.com/muxspace/facial_expressions" target="_blank" rel="noopener">facial_expressions</a> [GitHub repository].</li>
+      <li>Training scripts for the rebuild are in the <a href="https://github.com/anishohmyghosh/face-the-music/tree/main/training" target="_blank" rel="noopener">training/</a> folder of this repo.</li>
     </ul>
-    <p class="by">Made by <a href="https://anishohmyghosh.github.io/website/" target="_blank" rel="noopener">Anish Ghosh</a>.</p>
   </div>
+  </div>
+</details>
+<p class="by">Made by <a href="https://anishohmyghosh.github.io/website/" target="_blank" rel="noopener">Anish Ghosh</a> for Design with AI, University of Miami.</p>
 </section>
 
 <script type="module" src="app.js"></script>
